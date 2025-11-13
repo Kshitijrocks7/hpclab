@@ -209,3 +209,13 @@ OUTPUT:
 [Nonblocking] Rank 0 doing other work... 
 ..... 
 [Nonblocking] Rank 0 send completed 
+
+MPI commands 
+
+sudo dpkg —configure -a
+
+sudo apt install MPI
+
+mpicc filename.c
+
+mpirun -np N ./a.out
