@@ -261,3 +261,9 @@ int main() {
  
 return 0; 
 } 
+
+
+run cmd
+gedit f.c
+gcc -fopenmp f.c
+./a.out
