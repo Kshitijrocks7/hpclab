@@ -1,0 +1,211 @@
+PROGRAM 7 
+#include <mpi.h> 
+#include <stdio.h> 
+#include <stdlib.h> 
+#include <time.h> 
+int main(int argc, char *argv[]) { 
+MPI_Init(&argc, &argv); 
+int rank, size; 
+MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
+MPI_Comm_size(MPI_COMM_WORLD, &size); 
+// Seed random number generator differently for each process 
+srand(time(NULL) + rank); 
+// Each robot picks a random number of mangoes between 5 and 20 
+int mangoes_picked = 5 + rand() % 16; 
+printf("Robot %d picked %d mangoes\n", rank, mangoes_picked); 
+// Compute total mangoes using MPI_Reduce 
+int total_mangoes = 0; 
+MPI_Reduce(&mangoes_picked, &total_mangoes, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD); 
+if (rank == 0) { 
+printf("\nTotal mangoes picked by %d robots = %d\n", size, total_mangoes); 
+} 
+MPI_Finalize(); 
+return 0; 
+} 
+OUTPUT: 
+Robot 0 picked 18 mangoes 
+Robot 1 picked 18 mangoes 
+Robot 2 picked 18 mangoes 
+Robot 3 picked 15 mangoes 
+Total mangoes picked by 4 robots = 69 
+PROGRAM 8 
+#include <mpi.h> 
+#include <stdio.h> 
+#include <stdlib.h> 
+int main(int argc, char *argv[]) { 
+int rank, size; 
+MPI_Init(&argc, &argv); 
+MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
+MPI_Comm_size(MPI_COMM_WORLD, &size); 
+if (rank == 0) printf("MPI Collectives demo with %d process(es)\n\n", size); 
+// --- Broadcast --- 
+int bcast_val = 0; 
+if (rank == 0) bcast_val = 123; 
+MPI_Bcast(&bcast_val, 1, MPI_INT, 0, MPI_COMM_WORLD); 
+printf("[rank %d] received bcast_val = %d\n", rank, bcast_val); 
+// --- Scatter --- 
+int scatter_val; 
+int *scatter_buf = NULL; 
+if (rank == 0) { 
+scatter_buf = malloc(size * sizeof(int)); 
+for (int i = 0; i < size; i++) scatter_buf[i] = (i+1)*10; 
+} 
+MPI_Scatter(scatter_buf, 1, MPI_INT, &scatter_val, 1, MPI_INT, 0, MPI_COMM_WORLD); 
+printf("[rank %d] got scatter_val = %d\n", rank, scatter_val); 
+if (scatter_buf) free(scatter_buf); 
+// --- Gather --- 
+int my_val = rank * 10; 
+int *gather_buf = NULL; 
+if (rank == 0) gather_buf = malloc(size * sizeof(int)); 
+MPI_Gather(&my_val, 1, MPI_INT, gather_buf, 1, MPI_INT, 0, MPI_COMM_WORLD); 
+if (rank == 0) { 
+printf("Root gathered: "); 
+for (int i = 0; i < size; i++) printf("%d ", gather_buf[i]); 
+printf("\n"); 
+free(gather_buf); 
+} 
+// --- Reduce (sum) --- 
+int local_sum = rank + 1, total_sum; 
+MPI_Reduce(&local_sum, &total_sum, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD); 
+if (rank == 0) printf("Sum of ranks+1 = %d\n", total_sum); 
+// --- Allreduce (max) --- 
+int local_val = rank * 2; 
+int global_max; 
+MPI_Allreduce(&local_val, &global_max, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD); 
+printf("[rank %d] after Allreduce max = %d\n", rank, global_max); 
+// --- Scan (prefix sum) --- 
+int scan_out; 
+MPI_Scan(&rank, &scan_out, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD); 
+printf("[rank %d] prefix sum = %d\n", rank, scan_out); 
+MPI_Finalize(); 
+return 0; 
+} 
+OUTPUT: 
+[rank 2] received bcast_val = 123 
+[rank 2] got scatter_val = 30 
+[rank 3] received bcast_val = 123 
+[rank 3] got scatter_val = 40 
+MPI Collectives demo with 4 process(es) 
+[rank 0] received bcast_val = 123 
+[rank 0] got scatter_val = 10 
+[rank 1] received bcast_val = 123 
+[rank 1] got scatter_val = 20 
+Root gathered: 0 10 20 30 
+[rank 2] after Allreduce max = 6 
+[rank 2] prefix sum = 3 
+Sum of ranks+1 = 10 
+[rank 0] after Allreduce max = 6 
+[rank 0] prefix sum = 0 
+[rank 3] after Allreduce max = 6 
+[rank 3] prefix sum = 6 
+[rank 1] after Allreduce max = 6 
+[rank 1] prefix sum = 1 
+PROGRAM 9 
+#include <mpi.h> 
+#include <stdio.h> 
+#include <stdlib.h> 
+int main(int argc, char *argv[]) { 
+MPI_Init(&argc, &argv); 
+int rank, size; 
+MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
+MPI_Comm_size(MPI_COMM_WORLD, &size); 
+// Define a 2D Cartesian grid 
+int dims[2] = {0, 0}; 
+MPI_Dims_create(size, 2, dims);  // Let MPI choose dims if not specified 
+int periods[2] = {0, 0};
+          //
+ No wrap-around (non-periodic) 
+int reorder = 1;                   // Allow MPI to reorder ranks for efficiency 
+MPI_Comm cart_comm; 
+MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, reorder, &cart_comm); 
+if (cart_comm == MPI_COMM_NULL) { 
+printf("[rank %d] could not create Cartesian communicator\n", rank); 
+MPI_Finalize(); 
+return 0; 
+} 
+// Get my coordinates in the Cartesian grid 
+int coords[2]; 
+MPI_Cart_coords(cart_comm, rank, 2, coords); 
+printf("[rank %d] coords = (%d,%d)\n", rank, coords[0], coords[1]); 
+// Find neighbors (up, down, left, right) 
+int up, down, left, right; 
+MPI_Cart_shift(cart_comm, 0, 1, &up, &down);    // shift along rows 
+MPI_Cart_shift(cart_comm, 1, 1, &left, &right); // shift along columns 
+printf("[rank %d] neighbors -> up: %d, down: %d, left: %d, right: %d\n", 
+rank, up, down, left, right); 
+MPI_Finalize(); 
+return 0; 
+} 
+OUTPUT: 
+[rank 1] coords = (0,1) 
+[rank 1] neighbors -> up: -2, down: 3, left: 0, right: -2 
+[rank 3] coords = (1,1) 
+[rank 3] neighbors -> up: 1, down: -2, left: 2, right: -2 
+[rank 0] coords = (0,0) 
+[rank 0] neighbors -> up: -2, down: 2, left: -2, right: 1 
+[rank 2] coords = (1,0) 
+PROGRAM 10 
+#include <mpi.h> 
+#include <stdio.h> 
+#include <stdlib.h> 
+int main(int argc, char *argv[]) { 
+MPI_Init(&argc, &argv); 
+int rank, size; 
+MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
+MPI_Comm_size(MPI_COMM_WORLD, &size); 
+if (size < 2) { 
+if (rank == 0) printf("Please run with at least 2 processes.\n"); 
+MPI_Finalize(); 
+return 0; 
+} 
+// --- BLOCKING SEND / RECEIVE --- 
+if (rank == 0) { 
+int msg = 100; 
+printf("[Blocking] Rank 0 sending %d to rank 1\n", msg); 
+MPI_Send(&msg, 1, MPI_INT, 1, 0, MPI_COMM_WORLD); 
+printf("[Blocking] Rank 0 done sending\n"); 
+} else if (rank == 1) { 
+int recv_msg; 
+MPI_Recv(&recv_msg, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); 
+printf("[Blocking] Rank 1 received %d from rank 0\n", recv_msg); 
+} 
+MPI_Barrier(MPI_COMM_WORLD); // sync before nonblocking example 
+// --- NONBLOCKING SEND / RECEIVE --- 
+if (rank == 0) { 
+int msg = 200; 
+MPI_Request request; 
+printf("[Nonblocking] Rank 0 sending %d to rank 1\n", msg); 
+MPI_Isend(&msg, 1, MPI_INT, 1, 1, MPI_COMM_WORLD, &request); 
+// Do some work while message is in progress 
+printf("[Nonblocking] Rank 0 doing other work...\n"); 
+for (int i = 0; i < 5; i++) printf("."); 
+printf("\n"); 
+// Wait for send to complete 
+MPI_Wait(&request, MPI_STATUS_IGNORE); 
+printf("[Nonblocking] Rank 0 send completed\n"); 
+} else if (rank == 1) { 
+int recv_msg; 
+MPI_Request request; 
+MPI_Irecv(&recv_msg, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, &request); 
+// Do some work while waiting 
+printf("[Nonblocking] Rank 1 doing other work...\n"); 
+for (int i = 0; i < 5; i++) printf("*"); 
+printf("\n"); 
+// Wait for receive to complete 
+MPI_Wait(&request, MPI_STATUS_IGNORE); 
+printf("[Nonblocking] Rank 1 received %d from rank 0\n", recv_msg); 
+} 
+MPI_Finalize(); 
+} 
+return 0; 
+OUTPUT: 
+[Blocking] Rank 0 sending 100 to rank 1 
+[Blocking] Rank 0 done sending 
+[Blocking] Rank 1 received 100 from rank 0 
+[Nonblocking] Rank 1 doing other work... 
+***** 
+[Nonblocking] Rank 1 received 200 from rank 0 
+[Nonblocking] Rank 0 sending 200 to rank 1 
+[Nonblocking] Rank 0 doing other work... 
+..... 
+[Nonblocking] Rank 0 send completed 
