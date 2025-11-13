@@ -1,0 +1,16 @@
+MPI commands 
+
+sudo dpkg —configure -a
+
+sudo apt install MPI
+
+mpicc filename.c
+
+mpirun -np N ./a.out
+
+
+openmp
+
+gedit f.c
+gcc -fopenmp f.c
+./a.out
